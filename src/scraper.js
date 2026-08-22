@@ -18,6 +18,7 @@ import { loadArticles, saveArticles } from './services/storage.js';
 import { dedupeArticles } from './services/dedupe.js';
 import { filterRecent } from './services/recency-filter.js';
 import { filterRelevant } from './services/filter.js';
+import { loadSentArticles, filterUnsent } from './services/sent-articles-store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCRAPERS_DIR = path.join(__dirname, 'services', 'scrapers');
@@ -76,8 +77,20 @@ export async function runScrapeCycle() {
   const recent = filterRecent(deduped, { maxDays: 4 });
   console.log(`[scraper] ${recent.length}/${deduped.length} within the last 4 days`);
 
-  const relevant = await filterRelevant(recent);
-  console.log(`[scraper] ${relevant.length}/${recent.length} passed AI filter`);
+  // articles.json is emptied after every successful digest send (see
+  // digest.js), so "unseen" above has no memory of what already went out —
+  // without this, an article stays inside the 4-day recency window for up
+  // to 4 days after being sent, and gets silently re-scraped, re-run through
+  // the (paid) AI relevance filter, and re-saved each day until it ages out.
+  // digest.js's own filterUnsent() would still catch it before a second
+  // send, but only after paying for the relevance call again — check
+  // sent_articles.json here instead, before that call.
+  const sentEntries = await loadSentArticles();
+  const notSent = filterUnsent(recent, sentEntries);
+  console.log(`[scraper] ${notSent.length}/${recent.length} not already sent in a previous digest`);
+
+  const relevant = await filterRelevant(notSent);
+  console.log(`[scraper] ${relevant.length}/${notSent.length} passed AI filter`);
 
   if (relevant.length) {
     await saveArticles([...existing, ...relevant]);
