@@ -273,6 +273,42 @@ export async function fetchRenderedHtml(url, { waitForSelector, timeout = 30000,
   }
 }
 
+/**
+ * Look for a per-article publish date in common patterns on an article
+ * detail page: a <meta property="article:published_time"> tag (checked
+ * first — the most explicit when present), or a <time datetime="..."> element.
+ */
+function extractPublishedDate($) {
+  const metaContent = $('meta[property="article:published_time"]').attr('content');
+  const fromMeta = parseDate(metaContent);
+  if (fromMeta) return fromMeta;
+
+  const timeDatetime = $('time[datetime]').first().attr('datetime');
+  return parseDate(timeDatetime);
+}
+
+/**
+ * Combined browser-rendered fetch for sites whose listing page doesn't
+ * reliably expose a publish date but the article page does (e.g.
+ * railmarket.com: most listing cards show no date at all, only "featured"
+ * cards do, and not in a selectable field — but every article page carries
+ * article:published_time/<time datetime>). Fetches the page once and
+ * returns both the extracted body text and, if found, the real publish
+ * date, so callers don't need a second page load just for the date.
+ */
+export async function fetchArticlePageViaBrowser(url, prioritySelectors = [], options = {}) {
+  try {
+    const html = await fetchRenderedHtml(url, options);
+    if (isCloudflareChallenge(html)) return { fullText: '', publishedAt: null };
+    const $ = cheerio.load(html);
+    const publishedAt = extractPublishedDate($);
+    const fullText = extractBodyText($, prioritySelectors);
+    return { fullText, publishedAt };
+  } catch {
+    return { fullText: '', publishedAt: null };
+  }
+}
+
 /** Browser-rendered equivalent of fetchArticleText, for sites axios can't reach. */
 export async function fetchArticleTextViaBrowser(url, prioritySelectors = [], options = {}) {
   try {

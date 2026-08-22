@@ -9,13 +9,26 @@
 // per-article page instead serves Cloudflare's "Performing security
 // verification" interstitial (same managed-challenge behavior as ady.js/
 // railjournal.js — may still pass from a clean, non-datacenter IP). Rather
-// than fail the whole scrape, fetchArticleTextViaBrowser() already detects
-// this (see _helpers.js) and returns '' instead of the challenge page's
-// filler text, so article.fullText simply stays empty and the listing's
-// excerpt (article.summary, if any) is what survives — this is a known,
-// environment-dependent gap, not a parsing bug.
+// than fail the whole scrape, fetchArticlePageViaBrowser() already detects
+// this (see _helpers.js) and returns '' / null instead of the challenge
+// page's filler text, so article.fullText simply stays empty and the
+// listing's excerpt (article.summary, if any) is what survives — this is a
+// known, environment-dependent gap, not a parsing bug.
+//
+// Publish date: only "featured" hero cards on the listing show one at all
+// (as plain "Category · Month Day, Year" text, not in any selectable date
+// field) — regular cards (most of them) show no date whatsoever. Every
+// article page, however, carries a reliable article:published_time meta tag
+// and/or <time datetime> (confirmed by hand: a single one-off request got
+// the real date fine), so fetchArticlePageViaBrowser() reads it from there
+// and overrides whatever the listing pass fell back to. In practice this is
+// subject to the same per-article Cloudflare block described above — an
+// automated back-to-back scrape of all cards hit the challenge on every
+// single one in this environment, same as fullText, so dateSource still
+// comes out 'fallback' here. Not a logic bug; re-verify from wherever this
+// actually runs in production.
 import * as cheerio from 'cheerio';
-import { makeId, parseDate, absoluteUrl, fetchRenderedHtml, fetchArticleTextViaBrowser, resolvePublishedAt } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchRenderedHtml, fetchArticlePageViaBrowser, resolvePublishedAt } from './_helpers.js';
 
 const SOURCE = 'railmarket.com';
 const NEWS_URL = 'https://railmarket.com/news/regions/cis';
@@ -80,8 +93,15 @@ export async function scrape() {
   });
 
   for (const article of articles) {
-    article.fullText = await fetchArticleTextViaBrowser(article.url, ['.article-body', '.news-body', '.content-area', '.entry-content']);
-    if (!article.summary && article.fullText) article.summary = article.fullText.slice(0, 500);
+    const { fullText, publishedAt } = await fetchArticlePageViaBrowser(
+      article.url,
+      ['.article-body', '.news-body', '.content-area', '.entry-content'],
+    );
+    article.fullText = fullText;
+    if (!article.summary && fullText) article.summary = fullText.slice(0, 500);
+    // The article page's date is far more reliable than whatever the
+    // listing pass above could find (usually nothing) — prefer it when present.
+    if (publishedAt) Object.assign(article, resolvePublishedAt(publishedAt));
   }
 
   return articles;
