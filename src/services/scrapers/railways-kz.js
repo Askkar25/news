@@ -1,5 +1,10 @@
-// railways.kz/en/news2026 — Kazakhstan Temir Zholy (KTZ) English news
+// railways.kz/ru/news2026 — Kazakhstan Temir Zholy (KTZ) Russian news
 // Note: the URL path contains the year; update NEWS_URL each year if needed.
+//
+// Switched from the English (/en/) listing to the Russian (/ru/) one: same
+// site/template/dates-on-card structure, but the Russian page is updated
+// noticeably more often — at last check the freshest article on /en/ was
+// 5 days stale while /ru/ had one from today.
 //
 // railways.kz serves a broken/incomplete TLS certificate chain that real
 // browsers tolerate (they already trust the root) but Node's strict
@@ -8,14 +13,14 @@
 // this one host only.
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { makeId, absoluteUrl, fetchArticleText, resolvePublishedAt, DEFAULT_HEADERS, INSECURE_HTTPS_AGENT } from './_helpers.js';
+import { makeId, absoluteUrl, parseDate, fetchArticleText, resolvePublishedAt, DEFAULT_HEADERS, INSECURE_HTTPS_AGENT } from './_helpers.js';
 
 const SOURCE = 'railways.kz';
 const BASE = 'https://railways.kz';
 
 function newsUrl() {
   const year = new Date().getFullYear();
-  return { url: `${BASE}/en/news${year}`, prefix: `/news${year}/` };
+  return { url: `${BASE}/ru/news${year}`, prefix: `/news${year}/` };
 }
 
 export async function scrape() {
@@ -48,18 +53,32 @@ export async function scrape() {
     const url = absoluteUrl(BASE, href);
     if (!url) return;
 
+    // The publish date IS on the card — it just lives in a sibling block
+    // ($a's grandparent, not parent), as plain "DD.MM.YYYY" text with no
+    // <time> tag or date-ish class/attribute to select on (and, per the
+    // comment above, styled-components' hashed class names can't be relied
+    // on directly either). So match by the date-shaped text itself instead
+    // of a selector.
+    let publishedAt = null;
+    $a.parent().parent().find('div').each((_, div) => {
+      const text = $(div).text().trim();
+      if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(text)) {
+        publishedAt = parseDate(text);
+        return false; // stop at the first match
+      }
+    });
+
     seen.add(href);
     articles.push({
       id: makeId(url),
       title,
       url,
       source: SOURCE,
-      // No publish date is exposed on the listing cards themselves.
-      ...resolvePublishedAt(null),
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary: '',
       fullText: '',
-      language: 'en',
+      language: 'ru',
     });
   });
 
