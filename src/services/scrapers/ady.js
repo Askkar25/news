@@ -9,7 +9,7 @@
 // blocked, scrape() throws a clearly labeled error instead of silently
 // returning zero articles.
 import * as cheerio from 'cheerio';
-import { makeId, parseDate, absoluteUrl, fetchRenderedHtml, fetchArticleTextViaBrowser, today, isCloudflareChallenge } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchRenderedHtml, fetchArticleTextViaBrowser, resolvePublishedAt, isCloudflareChallenge } from './_helpers.js';
 
 const SOURCE = 'corp.ady.az';
 const NEWS_URL = 'https://corp.ady.az/en/2/news/news';
@@ -79,7 +79,7 @@ export async function scrape() {
       title,
       url,
       source: SOURCE,
-      publishedAt: publishedAt || today(),
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary,
       fullText: '',

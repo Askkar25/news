@@ -8,7 +8,8 @@
   },
   "scripts": {
     "scrape": "node src/scraper.js",
-    "digest": "node src/digest.js"
+    "digest": "node src/digest.js",
+    "test": "node --test src"
   },
   "dependencies": {
     "axios": "^1.7.9",

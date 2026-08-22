@@ -2,6 +2,9 @@
 input_*.json
 output/*
 !output/.gitkeep
+src/data/*.json
+src/data/digests/
+digest-preview.html
 .claude/settings.local.json
 .claude/logs/
 .claude/.tool-counter

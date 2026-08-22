@@ -1,7 +1,7 @@
 // railway.supply/news-en — railway supply industry news, English section
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { makeId, parseDate, absoluteUrl, fetchArticleText, today, DEFAULT_HEADERS } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchArticleText, resolvePublishedAt, DEFAULT_HEADERS } from './_helpers.js';
 
 const SOURCE = 'railway.supply';
 const NEWS_URL = 'https://www.railway.supply/news-en';
@@ -24,7 +24,7 @@ export async function scrape() {
     const url = absoluteUrl(BASE, titleEl.attr('href'));
     if (!url) return;
 
-    const publishedAt = parseDate($el.find('.publish-date').first().text()) || today();
+    const publishedAt = parseDate($el.find('.publish-date').first().text());
 
     const summary = $el.find('.post-description').first().text().replace(/\s+/g, ' ').trim().slice(0, 500);
 
@@ -33,7 +33,7 @@ export async function scrape() {
       title,
       url,
       source: SOURCE,
-      publishedAt,
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary,
       fullText: '',

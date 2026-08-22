@@ -81,6 +81,85 @@ function chunk(items, size) {
   return chunks;
 }
 
+// Matches a "Source | Publication Date" line: exactly one '|', both sides
+// short. This is what actually anchors article boundaries below — the '---'
+// separator SYSTEM_PROMPT asks for is a nice-to-have, not load-bearing,
+// because live testing showed OpenAI doesn't always include it even when
+// it otherwise follows the title/meta/summary shape faithfully.
+const META_LINE_RE = /^[^|]{1,80}\|[^|]{1,80}$/;
+
+/**
+ * Parse one batch's raw OpenAI response (the Title / "Source | Date" /
+ * Summary shape from SYSTEM_PROMPT) into structured entries, so the HTML
+ * renderer doesn't have to re-derive fields from free text.
+ *
+ * Deliberately doesn't split on '---': that separator is requested in the
+ * prompt but not reliably produced, so entry boundaries are instead found by
+ * scanning for "Source | Date" meta lines and taking the line right before
+ * each one as that entry's title.
+ */
+export function parseDigestEntries(batchText) {
+  const lines = batchText
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !/^-{3,}$/.test(l)); // drop blank lines and standalone '---' separators
+
+  const metaIndices = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (META_LINE_RE.test(lines[i])) metaIndices.push(i);
+  }
+
+  return metaIndices
+    .map((metaIdx, k) => {
+      const titleIdx = metaIdx - 1;
+      const summaryEnd = k + 1 < metaIndices.length ? metaIndices[k + 1] - 1 : lines.length;
+
+      const meta = lines[metaIdx];
+      const sepIndex = meta.indexOf('|');
+
+      return {
+        title: lines[titleIdx],
+        source: meta.slice(0, sepIndex).trim(),
+        publishedAt: meta.slice(sepIndex + 1).trim(),
+        summary: lines.slice(metaIdx + 1, summaryEnd).join(' ').trim(),
+      };
+    })
+    .filter((entry) => entry.title);
+}
+
+function escapeHtml(str) {
+  return (str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * Render the digest as HTML: numbered articles, bold (h3) title, summary as
+ * its own paragraph, and a separate gray "Source | Date" line.
+ * @param {Array<{title: string, source: string, publishedAt: string, summary: string}>} entries
+ * @param {Date} monday
+ */
+export function renderDigestHtml(entries, monday) {
+  const intro = `Railway Industry News Digest — Week of ${escapeHtml(formatMondayLabel(monday))}`;
+
+  const articlesHtml = entries.map((entry, i) => `
+    <div style="margin-bottom: 24px;">
+      <h3 style="margin: 0 0 4px; font-size: 17px;">${i + 1}. ${escapeHtml(entry.title)}</h3>
+      <p style="margin: 0 0 8px; color: #777777; font-size: 13px;">${escapeHtml(entry.source)}${entry.source && entry.publishedAt ? ' | ' : ''}${escapeHtml(entry.publishedAt)}</p>
+      <p style="margin: 0; font-size: 15px; line-height: 1.5;">${escapeHtml(entry.summary)}</p>
+    </div>`).join('\n');
+
+  return `<!doctype html>
+<html>
+  <body style="font-family: Arial, Helvetica, sans-serif; color: #222222; max-width: 640px; margin: 0 auto; padding: 16px;">
+    <h2 style="margin: 0 0 20px;">${intro}</h2>
+    ${articlesHtml}
+  </body>
+</html>
+`;
+}
+
 function formatArticleForPrompt(article, index) {
   const summary = (article.fullText || article.summary || '').slice(0, MAX_SUMMARY_CHARS);
   return `${index + 1}. Title: ${article.title}\nSource: ${article.source} | Published: ${article.publishedAt}\nContent: ${summary}`;
@@ -114,11 +193,13 @@ async function generateBatch(articles, { retries = 1 } = {}) {
 }
 
 /**
- * Build the full plain-text weekly digest from a list of articles.
+ * Build the weekly digest from a list of articles.
  * @param {Array} articles
  * @param {Date} [referenceDate] - defaults to now; used to compute the
  *   "Week of [DATE]" intro line.
- * @returns {Promise<string>}
+ * @returns {Promise<{text: string, entries: Array}>} `text` is the plain-text
+ *   digest (saved to disk as before); `entries` is the flat, structured list
+ *   of parsed articles used to render the HTML email.
  */
 export async function generateDigest(articles, referenceDate = new Date()) {
   if (!articles.length) {
@@ -130,9 +211,13 @@ export async function generateDigest(articles, referenceDate = new Date()) {
 
   const batches = chunk(articles, BATCH_SIZE);
   const sections = [];
+  const entries = [];
   for (const batch of batches) {
-    sections.push(await generateBatch(batch));
+    const sectionText = await generateBatch(batch);
+    sections.push(sectionText);
+    entries.push(...parseDigestEntries(sectionText));
   }
 
-  return `${intro}\n\n${sections.join('\n\n')}`.trim() + '\n';
+  const text = `${intro}\n\n${sections.join('\n\n')}`.trim() + '\n';
+  return { text, entries };
 }

@@ -16,6 +16,7 @@ import cron from 'node-cron';
 
 import { loadArticles, saveArticles } from './services/storage.js';
 import { dedupeArticles } from './services/dedupe.js';
+import { filterRecent } from './services/recency-filter.js';
 import { filterRelevant } from './services/filter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -70,8 +71,13 @@ export async function runScrapeCycle() {
   const deduped = dedupeArticles(unseen);
   console.log(`[scraper] ${rawArticles.length} raw -> ${unseen.length} unseen -> ${deduped.length} after dedup`);
 
-  const relevant = await filterRelevant(deduped);
-  console.log(`[scraper] ${relevant.length}/${deduped.length} passed AI filter`);
+  // Daily cron cadence: anything older than 4 days is either stale-listing
+  // noise or a backlog entry, not worth an OpenAI relevance call.
+  const recent = filterRecent(deduped, { maxDays: 4 });
+  console.log(`[scraper] ${recent.length}/${deduped.length} within the last 4 days`);
+
+  const relevant = await filterRelevant(recent);
+  console.log(`[scraper] ${relevant.length}/${recent.length} passed AI filter`);
 
   if (relevant.length) {
     await saveArticles([...existing, ...relevant]);

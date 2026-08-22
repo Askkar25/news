@@ -1,7 +1,7 @@
 // rollingstockworld.ru — Russian rolling stock industry news
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { makeId, parseDate, absoluteUrl, fetchArticleText, today, DEFAULT_HEADERS, INSECURE_HTTPS_AGENT } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchArticleText, resolvePublishedAt, DEFAULT_HEADERS, INSECURE_HTTPS_AGENT } from './_helpers.js';
 
 const SOURCE = 'rollingstockworld.ru';
 const NEWS_URL = 'https://rollingstockworld.ru';
@@ -35,7 +35,7 @@ export async function scrape() {
     });
     if (!title || !url) return;
 
-    const publishedAt = parseDate($el.find('.date').first().text()) || today();
+    const publishedAt = parseDate($el.find('.date').first().text());
     const summary = $el.find('p').first().text().replace(/\s+/g, ' ').trim().slice(0, 500);
 
     articles.push({
@@ -43,7 +43,7 @@ export async function scrape() {
       title,
       url,
       source: SOURCE,
-      publishedAt,
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary,
       fullText: '',

@@ -84,6 +84,21 @@ export function today() {
   return new Date().toISOString().split('T')[0];
 }
 
+/**
+ * Resolve the publishedAt field consistently across all scrapers, tagging
+ * whether the date actually came off the page (`parsed`) or had to fall back
+ * to today's date because none was found/parseable (`fallback`). The tag
+ * doesn't affect anything downstream (fallback articles still pass the
+ * recency filter, same as before) — it's there so src/data/articles.json can
+ * be inspected later to see which sources need better date selectors.
+ * @param {string|null} parsed - result of parseDate() (or null if none found)
+ */
+export function resolvePublishedAt(parsed) {
+  return parsed
+    ? { publishedAt: parsed, dateSource: 'parsed' }
+    : { publishedAt: today(), dateSource: 'fallback' };
+}
+
 const GENERIC_ARTICLE_SELECTORS = [
   'article .entry-content',
   'article .post-content',
@@ -129,6 +144,10 @@ export async function fetchArticleText(url, prioritySelectors = [], axiosOptions
       headers: DEFAULT_HEADERS,
       ...axiosOptions,
     });
+    // A per-article request can hit a bot-check interstitial even when the
+    // listing page didn't — extracting "text" from that page would just
+    // poison fullText/summary with the challenge copy instead of the article.
+    if (isCloudflareChallenge(data)) return '';
     return extractBodyText(cheerio.load(data), prioritySelectors);
   } catch {
     return '';
@@ -196,7 +215,7 @@ export function parseCards($, baseUrl, options = {}) {
       title,
       url,
       source,
-      publishedAt: publishedAt || today(),
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary,
       fullText: '',
@@ -258,6 +277,11 @@ export async function fetchRenderedHtml(url, { waitForSelector, timeout = 30000,
 export async function fetchArticleTextViaBrowser(url, prioritySelectors = [], options = {}) {
   try {
     const html = await fetchRenderedHtml(url, options);
+    // Same reasoning as fetchArticleText: a per-article render can still
+    // land on a Cloudflare challenge page even when the listing page didn't
+    // (challenges can be per-request/session) — don't extract its filler
+    // copy as if it were the article body.
+    if (isCloudflareChallenge(html)) return '';
     return extractBodyText(cheerio.load(html), prioritySelectors);
   } catch {
     return '';

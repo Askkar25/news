@@ -8,7 +8,7 @@
 // the axios 403. When it's still blocked, scrape() throws a clearly labeled
 // error instead of silently returning zero articles.
 import * as cheerio from 'cheerio';
-import { makeId, parseDate, absoluteUrl, fetchRenderedHtml, fetchArticleTextViaBrowser, today, isCloudflareChallenge } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchRenderedHtml, fetchArticleTextViaBrowser, resolvePublishedAt, isCloudflareChallenge } from './_helpers.js';
 
 const SOURCE = 'railjournal.com';
 const NEWS_URL = 'https://www.railjournal.com/news';
@@ -70,7 +70,7 @@ export async function scrape() {
       title,
       url,
       source: SOURCE,
-      publishedAt: publishedAt || today(),
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary,
       fullText: '',

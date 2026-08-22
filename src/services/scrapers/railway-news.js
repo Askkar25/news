@@ -1,7 +1,7 @@
 // railway-news.com/news — English-language railway industry news
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { makeId, parseDate, absoluteUrl, fetchArticleText, today, DEFAULT_HEADERS } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchArticleText, resolvePublishedAt, DEFAULT_HEADERS } from './_helpers.js';
 
 const SOURCE = 'railway-news.com';
 const NEWS_URL = 'https://railway-news.com/news';
@@ -25,7 +25,7 @@ export async function scrape() {
     if (!url) return;
 
     const timeEl = link.find('time.card__timestamp').first();
-    const publishedAt = parseDate(timeEl.attr('datetime') || timeEl.text()) || today();
+    const publishedAt = parseDate(timeEl.attr('datetime') || timeEl.text());
 
     const summary = link.find('.cards__body').first().text().replace(/\s+/g, ' ').trim().slice(0, 500);
 
@@ -34,7 +34,7 @@ export async function scrape() {
       title,
       url,
       source: SOURCE,
-      publishedAt,
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary,
       fullText: '',

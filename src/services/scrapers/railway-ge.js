@@ -5,7 +5,7 @@
 // real multipart/form-data body (not urlencoded) and the locale-prefixed
 // path to get English content — reverse-engineered from the theme bundle.
 import axios from 'axios';
-import { makeId, parseDate, absoluteUrl, today } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, resolvePublishedAt } from './_helpers.js';
 
 const SOURCE = 'railway.ge';
 const API_URL = 'https://www.railway.ge/en/wp-json/wi/posts/';
@@ -34,7 +34,7 @@ export async function scrape() {
       title: (item.title || '').replace(/\s+/g, ' ').trim(),
       url,
       source: SOURCE,
-      publishedAt: parseDate(item.date) || today(),
+      ...resolvePublishedAt(parseDate(item.date)),
       scrapedAt: new Date().toISOString(),
       summary,
       // Article detail pages are the same Vue SPA shell, so the listing

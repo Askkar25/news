@@ -34,13 +34,15 @@ function getRecipients() {
 
 /**
  * @param {string} subject
- * @param {string} body - plain-text digest content
+ * @param {{text: string, html?: string}} body - plain-text digest content,
+ *   plus an optional HTML version (sent as a multipart alternative — the
+ *   text stays as a fallback for clients that don't render HTML).
  */
-export async function sendDigestEmail(subject, body) {
+export async function sendDigestEmail(subject, { text, html } = {}) {
   const transport = getTransporter();
   const to = getRecipients();
   const from = process.env.EMAIL_FROM || process.env.EMAIL_USER;
 
-  const info = await transport.sendMail({ from, to, subject, text: body });
+  const info = await transport.sendMail({ from, to, subject, text, ...(html ? { html } : {}) });
   return { messageId: info.messageId, to };
 }

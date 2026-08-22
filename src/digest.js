@@ -13,8 +13,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { loadArticles, saveArticles } from './services/storage.js';
-import { generateDigest, getMondayOfWeek, formatMondayLabel, formatMondayISO } from './services/digest-generator.js';
+import { generateDigest, renderDigestHtml, getMondayOfWeek, formatMondayLabel, formatMondayISO } from './services/digest-generator.js';
 import { sendDigestEmail } from './services/mailer.js';
+import { loadSentArticles, saveSentArticles, filterUnsent, recordSentArticles } from './services/sent-articles-store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIGESTS_DIR = path.join(__dirname, 'data', 'digests');
@@ -30,33 +31,43 @@ export async function runDigestCycle({ dryRun = false } = {}) {
   const startedAt = Date.now();
   const monday = getMondayOfWeek();
 
-  const articles = await loadArticles();
-  console.log(`[digest] ${articles.length} article(s) in src/data/articles.json`);
+  const allArticles = await loadArticles();
+  console.log(`[digest] ${allArticles.length} article(s) in src/data/articles.json`);
+
+  const sentEntries = await loadSentArticles();
+  const articles = filterUnsent(allArticles, sentEntries);
+  console.log(`[digest] ${articles.length}/${allArticles.length} not already sent in a previous digest`);
+
   if (!articles.length) {
     console.log('[digest] nothing to digest — exiting');
     return null;
   }
 
   console.log(`[digest] generating digest for week of ${formatMondayLabel(monday)}...`);
-  const digestText = await generateDigest(articles, new Date());
+  const { text: digestText, entries } = await generateDigest(articles, new Date());
+  const digestHtml = renderDigestHtml(entries, monday);
 
   const savedPath = await saveDigestToDisk(digestText, monday);
   console.log(`[digest] saved to ${savedPath}`);
 
   if (dryRun) {
     console.log('[digest] --dry-run: skipping email send');
-    return { digestText, savedPath, sent: false };
+    return { digestText, digestHtml, savedPath, sent: false };
   }
 
   const subject = `Railway News Digest — Week of ${formatMondayLabel(monday)}`;
-  const { to } = await sendDigestEmail(subject, digestText);
+  const { to } = await sendDigestEmail(subject, { text: digestText, html: digestHtml });
   console.log(`[digest] email sent to: ${to.join(', ')}`);
+
+  const updatedSentEntries = recordSentArticles(articles.map((a) => a.url), sentEntries);
+  await saveSentArticles(updatedSentEntries);
+  console.log(`[digest] recorded ${articles.length} sent url(s) in src/data/sent_articles.json`);
 
   await saveArticles([]);
   console.log('[digest] cleared src/data/articles.json for next week');
 
   console.log(`[digest] cycle done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
-  return { digestText, savedPath, sent: true };
+  return { digestText, digestHtml, savedPath, sent: true };
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

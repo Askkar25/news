@@ -1,7 +1,7 @@
 // turasas.gov.tr/basin/haberler — Turkish State Railways (TÜRASAŞ) news
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { makeId, parseDate, absoluteUrl, fetchArticleText, today, DEFAULT_HEADERS } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchArticleText, resolvePublishedAt, DEFAULT_HEADERS } from './_helpers.js';
 
 const SOURCE = 'turasas.gov.tr';
 const NEWS_URL = 'https://www.turasas.gov.tr/basin/haberler';
@@ -27,14 +27,14 @@ export async function scrape() {
     const url = absoluteUrl(BASE, titleEl.attr('href'));
     if (!url) return;
 
-    const publishedAt = parseDate($el.find('.meta-info li').first().text()) || today();
+    const publishedAt = parseDate($el.find('.meta-info li').first().text());
 
     articles.push({
       id: makeId(url),
       title,
       url,
       source: SOURCE,
-      publishedAt,
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary: '',
       fullText: '',

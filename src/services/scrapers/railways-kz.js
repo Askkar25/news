@@ -1,8 +1,14 @@
 // railways.kz/en/news2026 — Kazakhstan Temir Zholy (KTZ) English news
 // Note: the URL path contains the year; update NEWS_URL each year if needed.
+//
+// railways.kz serves a broken/incomplete TLS certificate chain that real
+// browsers tolerate (they already trust the root) but Node's strict
+// verification rejects with "unable to verify the first certificate" — same
+// issue as rollingstockworld.ru, hence the same insecure agent, scoped to
+// this one host only.
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { makeId, absoluteUrl, fetchArticleText, today, DEFAULT_HEADERS } from './_helpers.js';
+import { makeId, absoluteUrl, fetchArticleText, resolvePublishedAt, DEFAULT_HEADERS, INSECURE_HTTPS_AGENT } from './_helpers.js';
 
 const SOURCE = 'railways.kz';
 const BASE = 'https://railways.kz';
@@ -16,7 +22,11 @@ export async function scrape() {
   const { url: NEWS_URL, prefix } = newsUrl();
   // This page ships its entire news archive in one response (~1MB) rather
   // than paginating, which is what was blowing through the old 25s timeout.
-  const { data } = await axios.get(NEWS_URL, { timeout: 45000, headers: DEFAULT_HEADERS });
+  const { data } = await axios.get(NEWS_URL, {
+    timeout: 45000,
+    headers: DEFAULT_HEADERS,
+    httpsAgent: INSECURE_HTTPS_AGENT,
+  });
   const $ = cheerio.load(data);
 
   // Styled-components hashes its class names per build, so we anchor on the
@@ -45,7 +55,7 @@ export async function scrape() {
       url,
       source: SOURCE,
       // No publish date is exposed on the listing cards themselves.
-      publishedAt: today(),
+      ...resolvePublishedAt(null),
       scrapedAt: new Date().toISOString(),
       summary: '',
       fullText: '',
@@ -54,7 +64,11 @@ export async function scrape() {
   });
 
   for (const article of articles) {
-    article.fullText = await fetchArticleText(article.url, ['.news-detail', '.article-body', '.detail-text']);
+    article.fullText = await fetchArticleText(
+      article.url,
+      ['.news-detail', '.article-body', '.detail-text'],
+      { httpsAgent: INSECURE_HTTPS_AGENT },
+    );
     if (article.fullText) article.summary = article.fullText.slice(0, 500);
   }
 

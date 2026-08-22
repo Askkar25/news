@@ -4,7 +4,7 @@
 // from a clean, unauthenticated JSON API — so we call that directly instead
 // of rendering the SPA.
 import axios from 'axios';
-import { makeId, parseDate, absoluteUrl, today } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, resolvePublishedAt } from './_helpers.js';
 
 const SOURCE = 'railway.kg';
 const API_URL = 'https://api.railway.kg/api/news/?category=allnews';
@@ -27,7 +27,7 @@ export async function scrape() {
       title: (item.title_ru || '').trim(),
       url,
       source: SOURCE,
-      publishedAt: parseDate(item.created) || today(),
+      ...resolvePublishedAt(parseDate(item.created)),
       scrapedAt: new Date().toISOString(),
       summary: fullText.slice(0, 500),
       fullText,

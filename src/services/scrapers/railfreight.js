@@ -1,7 +1,7 @@
 // railfreight.com — European and global rail freight news
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { makeId, parseDate, absoluteUrl, fetchArticleText, today, DEFAULT_HEADERS } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchArticleText, resolvePublishedAt, DEFAULT_HEADERS } from './_helpers.js';
 
 const SOURCE = 'railfreight.com';
 const NEWS_URL = 'https://www.railfreight.com';
@@ -28,7 +28,7 @@ export async function scrape() {
     if (!url) return;
 
     const timeEl = $el.find('time.pubdate').first();
-    const publishedAt = parseDate(timeEl.attr('datetime') || timeEl.text()) || today();
+    const publishedAt = parseDate(timeEl.attr('datetime') || timeEl.text());
 
     const summary = $el.find('.excerpt').first().text().replace(/\s+/g, ' ').trim().slice(0, 500);
 
@@ -37,7 +37,7 @@ export async function scrape() {
       title,
       url,
       source: SOURCE,
-      publishedAt,
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary,
       fullText: '',

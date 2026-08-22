@@ -4,8 +4,18 @@
 // fingerprinting) even with full browser-like headers, but serves normal
 // static HTML to a real browser engine — so both the listing and article
 // pages are fetched through headless Chrome instead of axios.
+//
+// NOTE: from this environment, the listing page renders fine but every
+// per-article page instead serves Cloudflare's "Performing security
+// verification" interstitial (same managed-challenge behavior as ady.js/
+// railjournal.js — may still pass from a clean, non-datacenter IP). Rather
+// than fail the whole scrape, fetchArticleTextViaBrowser() already detects
+// this (see _helpers.js) and returns '' instead of the challenge page's
+// filler text, so article.fullText simply stays empty and the listing's
+// excerpt (article.summary, if any) is what survives — this is a known,
+// environment-dependent gap, not a parsing bug.
 import * as cheerio from 'cheerio';
-import { makeId, parseDate, absoluteUrl, fetchRenderedHtml, fetchArticleTextViaBrowser, today } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchRenderedHtml, fetchArticleTextViaBrowser, resolvePublishedAt } from './_helpers.js';
 
 const SOURCE = 'railmarket.com';
 const NEWS_URL = 'https://railmarket.com/news/regions/cis';
@@ -61,7 +71,7 @@ export async function scrape() {
       title,
       url,
       source: SOURCE,
-      publishedAt: publishedAt || today(),
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary,
       fullText: '',

@@ -6,7 +6,7 @@
 // up while actually visiting the page — so we drive a real browser to the
 // /en/news page and capture that XHR's JSON response instead of guessing at
 // headers/cookies.
-import { makeId, parseDate, absoluteUrl, fetchJsonViaBrowser, today } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchJsonViaBrowser, resolvePublishedAt } from './_helpers.js';
 
 const SOURCE = 'tcdd.gov.tr';
 const NEWS_PAGE = 'https://www.tcdd.gov.tr/en/news';
@@ -24,7 +24,7 @@ export async function scrape() {
       title: (item.title || '').trim(),
       url,
       source: SOURCE,
-      publishedAt: parseDate(item.date) || today(),
+      ...resolvePublishedAt(parseDate(item.date)),
       scrapedAt: new Date().toISOString(),
       summary: (item.short || '').trim(),
       // Article detail pages are the same client-rendered SPA, so we settle

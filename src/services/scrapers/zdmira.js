@@ -1,7 +1,7 @@
 // zdmira.com/news — Russian railway news aggregator
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { makeId, parseDate, absoluteUrl, fetchArticleText, today, DEFAULT_HEADERS } from './_helpers.js';
+import { makeId, parseDate, absoluteUrl, fetchArticleText, resolvePublishedAt, DEFAULT_HEADERS } from './_helpers.js';
 
 const SOURCE = 'zdmira.com';
 const NEWS_URL = 'https://zdmira.com/news';
@@ -65,7 +65,7 @@ export async function scrape() {
       title,
       url,
       source: SOURCE,
-      publishedAt: publishedAt || today(),
+      ...resolvePublishedAt(publishedAt),
       scrapedAt: new Date().toISOString(),
       summary,
       fullText: '',
