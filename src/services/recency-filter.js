@@ -26,7 +26,7 @@ function daysAgo(publishedAt, referenceDate) {
  * @param {Array} articles
  * @param {{maxDays?: number, referenceDate?: Date}} [options]
  */
-export function filterRecent(articles, { maxDays = 4, referenceDate = new Date() } = {}) {
+export function filterRecent(articles, { maxDays = 10, referenceDate = new Date() } = {}) {
   return articles.filter((article) => {
     const age = daysAgo(article.publishedAt, referenceDate);
     // Unparseable/missing publishedAt: keep the article rather than silently

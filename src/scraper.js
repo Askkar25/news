@@ -72,10 +72,10 @@ export async function runScrapeCycle() {
   const deduped = dedupeArticles(unseen);
   console.log(`[scraper] ${rawArticles.length} raw -> ${unseen.length} unseen -> ${deduped.length} after dedup`);
 
-  // Daily cron cadence: anything older than 4 days is either stale-listing
+  // Daily cron cadence: anything older than 10 days is either stale-listing
   // noise or a backlog entry, not worth an OpenAI relevance call.
-  const recent = filterRecent(deduped, { maxDays: 4 });
-  console.log(`[scraper] ${recent.length}/${deduped.length} within the last 4 days`);
+  const recent = filterRecent(deduped, { maxDays: 10 });
+  console.log(`[scraper] ${recent.length}/${deduped.length} within the last 10 days`);
 
   // articles.json is emptied after every successful digest send (see
   // digest.js), so "unseen" above has no memory of what already went out —
