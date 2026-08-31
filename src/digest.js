@@ -4,9 +4,13 @@
 //   node src/digest.js --dry-run  — generate and save to disk only, skip
 //                                   the email send (no SMTP creds needed)
 //
-// On a successful send, src/data/articles.json is cleared (per TASK.md
-// section 7 "clear articles.json for next week") so the next weekly run
-// only picks up articles gathered since. A --dry-run never clears it.
+// On a successful send, src/data/articles.json is cleared of every article
+// that actually made it into the digest (per TASK.md section 7 "clear
+// articles.json for next week") so the next weekly run only picks up
+// articles gathered since. Any article OpenAI silently omitted from its
+// response is left in articles.json (and NOT recorded in sent_articles.json)
+// so it's retried on the next run instead of being lost. A --dry-run never
+// touches either file.
 import 'dotenv/config';
 import fs from 'fs/promises';
 import path from 'path';
@@ -44,8 +48,14 @@ export async function runDigestCycle({ dryRun = false } = {}) {
   }
 
   console.log(`[digest] generating digest for week of ${formatMondayLabel(monday)}...`);
-  const { text: digestText, entries } = await generateDigest(articles, new Date());
+  const { text: digestText, entries, includedArticles, missingArticles } = await generateDigest(articles, new Date());
   const digestHtml = renderDigestHtml(entries, monday);
+
+  if (missingArticles.length) {
+    console.warn(
+      `[digest] OpenAI omitted ${missingArticles.length}/${articles.length} article(s) from the generated digest — they will NOT be marked as sent and stay in src/data/articles.json for the next run`
+    );
+  }
 
   const savedPath = await saveDigestToDisk(digestText, monday);
   console.log(`[digest] saved to ${savedPath}`);
@@ -59,12 +69,22 @@ export async function runDigestCycle({ dryRun = false } = {}) {
   const { to } = await sendDigestEmail(subject, { text: digestText, html: digestHtml });
   console.log(`[digest] email sent to: ${to.join(', ')}`);
 
-  const updatedSentEntries = recordSentArticles(articles.map((a) => a.url), sentEntries);
+  const updatedSentEntries = recordSentArticles(includedArticles.map((a) => a.url), sentEntries);
   await saveSentArticles(updatedSentEntries);
-  console.log(`[digest] recorded ${articles.length} sent url(s) in src/data/sent_articles.json`);
+  console.log(`[digest] recorded ${includedArticles.length} sent url(s) in src/data/sent_articles.json`);
 
-  await saveArticles([]);
-  console.log('[digest] cleared src/data/articles.json for next week');
+  // Only the articles OpenAI actually included get cleared — anything it
+  // omitted stays in articles.json so it's retried next run instead of being
+  // silently lost. Carried-over articles are exempt from the scraper's
+  // recency filter (that only runs on freshly-scraped articles, not on
+  // existing articles.json entries — see scraper.js), so they won't get
+  // dropped for aging past the 10-day window while they wait.
+  await saveArticles(missingArticles);
+  console.log(
+    missingArticles.length
+      ? `[digest] cleared ${includedArticles.length} sent article(s) from src/data/articles.json — ${missingArticles.length} carried over for next run`
+      : '[digest] cleared src/data/articles.json for next week'
+  );
 
   console.log(`[digest] cycle done in ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
   return { digestText, digestHtml, savedPath, sent: true };

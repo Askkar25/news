@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseDigestEntries, renderDigestHtml, getMondayOfWeek } from './digest-generator.js';
+import { parseDigestEntries, renderDigestHtml, getMondayOfWeek, matchArticlesToEntries } from './digest-generator.js';
 
 test('parseDigestEntries splits a batch response into structured entries', () => {
   const batchText = [
@@ -47,4 +47,31 @@ test('renderDigestHtml numbers articles, bolds the title as h3, and grays the so
   assert.match(html, /<h3[^>]*>2\. Second Story<\/h3>/);
   assert.match(html, /color: #777777[^>]*>railfreight\.com \| 2026-08-20/);
   assert.match(html, /<p[^>]*>Body one\.<\/p>/);
+});
+
+test('matchArticlesToEntries pairs off duplicate source+date articles in order and reports the rest as missing', () => {
+  const batchArticles = [
+    { url: 'https://a', source: 'railways.kz', publishedAt: '2026-08-26' },
+    { url: 'https://b', source: 'railways.kz', publishedAt: '2026-08-26' }, // duplicate source+date
+    { url: 'https://c', source: 'railfreight.com', publishedAt: '2026-08-28' },
+  ];
+  // OpenAI's response only covered 2 of the 3 — 'b' got silently dropped —
+  // and reformatted railfreight.com's date from '2026-08-28' to a long form.
+  const parsedEntries = [
+    { title: 'A', source: 'railways.kz', publishedAt: '2026-08-26', summary: '' },
+    { title: 'C', source: 'railfreight.com', publishedAt: 'August 28, 2026', summary: '' },
+  ];
+
+  const { included, missing } = matchArticlesToEntries(batchArticles, parsedEntries);
+
+  assert.deepEqual(included.map((a) => a.url), ['https://a', 'https://c']);
+  assert.deepEqual(missing.map((a) => a.url), ['https://b']);
+});
+
+test('matchArticlesToEntries returns everything as missing when the response is empty', () => {
+  const batchArticles = [{ url: 'https://a', source: 'railfreight.com', publishedAt: '2026-08-28' }];
+  const { included, missing } = matchArticlesToEntries(batchArticles, []);
+
+  assert.deepEqual(included, []);
+  assert.deepEqual(missing.map((a) => a.url), ['https://a']);
 });

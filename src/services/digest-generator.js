@@ -127,6 +127,60 @@ export function parseDigestEntries(batchText) {
     .filter((entry) => entry.title);
 }
 
+/** Loose date equality: exact string match, else same calendar day once both
+ *  sides parse as dates. OpenAI is asked to echo back the article's
+ *  "Published: <publishedAt>" value verbatim as the entry's date, but isn't
+ *  guaranteed to keep the exact 'YYYY-MM-DD' shape (e.g. it may write
+ *  "August 20, 2026" instead) — this tolerates that reformatting. */
+function datesMatch(entryDate, articleDate) {
+  if (!entryDate || !articleDate) return false;
+  if (entryDate.trim() === articleDate.trim()) return true;
+  const d1 = new Date(entryDate);
+  const d2 = new Date(articleDate);
+  if (Number.isNaN(d1.getTime()) || Number.isNaN(d2.getTime())) return false;
+  return d1.toDateString() === d2.toDateString();
+}
+
+/**
+ * Match a batch's parsed entries back to the source articles that produced
+ * them, so callers can tell which input articles OpenAI actually included in
+ * its response vs. silently dropped (see digest.js: only articles that
+ * really made it into the digest should be recorded as "sent").
+ *
+ * Matches on `source` + `publishedAt` (fields the prompt asks OpenAI to echo
+ * back untranslated, unlike the title) in entry order, so duplicate
+ * source+date pairs within a batch pair off with the correct article rather
+ * than all binding to the first one. Falls back to matching on `source`
+ * alone when exactly one candidate with that source remains.
+ *
+ * @param {Array} batchArticles - the articles sent to OpenAI for this batch
+ * @param {Array} parsedEntries - parseDigestEntries() output for the batch's response
+ * @returns {{included: Array, missing: Array}} `included` are batchArticles
+ *   that matched an entry (in entry order); `missing` are batchArticles left
+ *   over (in original order) — i.e. requested but not present in the response.
+ */
+export function matchArticlesToEntries(batchArticles, parsedEntries) {
+  const remaining = batchArticles.map((article, i) => ({ article, i }));
+  const included = [];
+
+  for (const entry of parsedEntries) {
+    let pos = remaining.findIndex(
+      ({ article }) => article.source === entry.source && datesMatch(entry.publishedAt, article.publishedAt)
+    );
+    if (pos === -1) {
+      const sourceMatches = remaining.filter(({ article }) => article.source === entry.source);
+      if (sourceMatches.length === 1) pos = remaining.indexOf(sourceMatches[0]);
+    }
+    if (pos !== -1) {
+      included.push(remaining[pos].article);
+      remaining.splice(pos, 1);
+    }
+  }
+
+  remaining.sort((a, b) => a.i - b.i);
+  return { included, missing: remaining.map((r) => r.article) };
+}
+
 function escapeHtml(str) {
   return (str || '')
     .replace(/&/g, '&amp;')
@@ -197,9 +251,15 @@ async function generateBatch(articles, { retries = 1 } = {}) {
  * @param {Array} articles
  * @param {Date} [referenceDate] - defaults to now; used to compute the
  *   "Week of [DATE]" intro line.
- * @returns {Promise<{text: string, entries: Array}>} `text` is the plain-text
- *   digest (saved to disk as before); `entries` is the flat, structured list
- *   of parsed articles used to render the HTML email.
+ * @returns {Promise<{text: string, entries: Array, includedArticles: Array, missingArticles: Array}>}
+ *   `text` is the plain-text digest (saved to disk as before); `entries` is
+ *   the flat, structured list of parsed articles used to render the HTML
+ *   email. `includedArticles` are the input articles OpenAI actually
+ *   produced an entry for (matched via matchArticlesToEntries) — this is
+ *   what should be recorded as "sent", since it can be fewer than `articles`
+ *   if a batch response omits some. `missingArticles` are the leftover input
+ *   articles that got no entry in this run, in original order, so they can
+ *   be carried over to the next run instead of being lost.
  */
 export async function generateDigest(articles, referenceDate = new Date()) {
   if (!articles.length) {
@@ -212,12 +272,24 @@ export async function generateDigest(articles, referenceDate = new Date()) {
   const batches = chunk(articles, BATCH_SIZE);
   const sections = [];
   const entries = [];
+  const includedArticles = [];
+  const missingArticles = [];
   for (const batch of batches) {
     const sectionText = await generateBatch(batch);
     sections.push(sectionText);
-    entries.push(...parseDigestEntries(sectionText));
+    const batchEntries = parseDigestEntries(sectionText);
+    entries.push(...batchEntries);
+
+    const { included, missing } = matchArticlesToEntries(batch, batchEntries);
+    includedArticles.push(...included);
+    missingArticles.push(...missing);
+    if (missing.length) {
+      console.warn(
+        `[digest-generator] OpenAI response only covered ${included.length}/${batch.length} articles in this batch — carrying ${missing.length} over: ${missing.map((a) => a.url).join(', ')}`
+      );
+    }
   }
 
   const text = `${intro}\n\n${sections.join('\n\n')}`.trim() + '\n';
-  return { text, entries };
+  return { text, entries, includedArticles, missingArticles };
 }
